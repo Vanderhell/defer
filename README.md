@@ -2,7 +2,7 @@
 
 > Automatic resource cleanup for C. Single header, zero allocation, no more `goto cleanup`.
 
-[![CI](https://github.com/Vanderhell/defer.h/actions/workflows/ci.yml/badge.svg)](https://github.com/Vanderhell/defer.h/actions/workflows/ci.yml)
+[![CI](https://github.com/Vanderhell/defer/actions/workflows/ci.yml/badge.svg)](https://github.com/Vanderhell/defer/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![C99](https://img.shields.io/badge/C-99-blue.svg)](defer.h)
 [![Single header](https://img.shields.io/badge/header-single-orange.svg)](defer.h)
