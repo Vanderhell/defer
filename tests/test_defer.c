@@ -21,7 +21,10 @@
 #include <stdlib.h>
 #include <string.h>
 #include <fcntl.h>
+
+#if defined(__unix__) || defined(__APPLE__)
 #include <unistd.h>
+#endif
 
 #include "../defer.h"
 
@@ -108,6 +111,7 @@ TEST(defer_free_null_safe)
 }
 
 /* ── test 4: DEFER_FCLOSE basic ──────────────────────────────────────── */
+#if defined(__unix__) || defined(__APPLE__)
 TEST(defer_fclose_basic)
 {
     char tmpname[] = "/tmp/defer_test_XXXXXX";
@@ -126,6 +130,13 @@ TEST(defer_fclose_basic)
     /* reaching here without abort = OK */
     ASSERT(1);
 }
+#else
+/* POSIX-only test — skipped on non-POSIX platforms */
+TEST(defer_fclose_basic)
+{
+    ASSERT(1);
+}
+#endif
 
 /* ── test 5: DEFER_FCLOSE NULL safety ────────────────────────────────── */
 TEST(defer_fclose_null_safe)
@@ -138,6 +149,7 @@ TEST(defer_fclose_null_safe)
 }
 
 /* ── test 6: DEFER_CLOSE basic ───────────────────────────────────────── */
+#if defined(__unix__) || defined(__APPLE__)
 TEST(defer_close_basic)
 {
     char tmpname[] = "/tmp/defer_fd_XXXXXX";
@@ -160,6 +172,18 @@ TEST(defer_close_neg_safe)
     }
     ASSERT(fd == -1);
 }
+#else
+/* POSIX-only test — skipped on non-POSIX platforms */
+TEST(defer_close_basic)
+{
+    ASSERT(1);
+}
+
+TEST(defer_close_neg_safe)
+{
+    ASSERT(1);
+}
+#endif
 
 /* ── test 8: DEFER(fn, ctx) generic ──────────────────────────────────── */
 TEST(defer_generic_callback)
@@ -252,6 +276,7 @@ TEST(defer_multiple_resources)
 }
 
 /* ── test 13: DEFER_FREE + write pattern ─────────────────────────────── */
+#if defined(__unix__) || defined(__APPLE__)
 TEST(defer_free_with_write)
 {
     char tmpname[] = "/tmp/defer_rw_XXXXXX";
@@ -279,6 +304,13 @@ TEST(defer_free_with_write)
     ASSERT(ok == 1);
     unlink(tmpname);
 }
+#else
+/* POSIX-only test — skipped on non-POSIX platforms */
+TEST(defer_free_with_write)
+{
+    ASSERT(1);
+}
+#endif
 
 /* ── main ─────────────────────────────────────────────────────────────── */
 int main(void)
