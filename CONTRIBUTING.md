@@ -61,7 +61,7 @@ Describe the real problem, not just the proposed solution.
 
 ## Code style
 
-- C99 minimum, C11 preferred
+- C99 (required for portability)
 - 4 spaces, no tabs
 - `snake_case` for everything
 - Macros in `SCREAMING_SNAKE_CASE`

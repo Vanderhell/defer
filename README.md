@@ -4,7 +4,7 @@
 
 [![CI](https://github.com/Vanderhell/defer.h/actions/workflows/ci.yml/badge.svg)](https://github.com/Vanderhell/defer.h/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
-[![C99](https://img.shields.io/badge/C-99%2F11%2F17-blue.svg)](defer.h)
+[![C99](https://img.shields.io/badge/C-99-blue.svg)](defer.h)
 [![Single header](https://img.shields.io/badge/header-single-orange.svg)](defer.h)
 [![ARM](https://img.shields.io/badge/ARM-Cortex--M-red.svg)](defer.h)
 [![Zero allocation](https://img.shields.io/badge/allocation-zero-brightgreen.svg)](defer.h)
@@ -177,15 +177,29 @@ Nested scopes clean up the inner scope before the outer:
 | Clang 3.0+ | ✅ Full | `__attribute__((cleanup))` |
 | ARM GCC (Cortex-M/A/R) | ✅ Full | Tested: `arm-none-eabi-gcc` |
 | AVR GCC | ✅ Full | |
-| MSVC | ⚠️ No-op | `DEFER_SUPPORTED == 0`, `#warning` emitted |
+| MSVC | ❌ Not supported | `DEFER_SUPPORTED == 0`, macros undefined |
 
-`DEFER_SUPPORTED` is a compile-time constant you can check:
+### Unsupported compilers
+
+On unsupported compilers (e.g., MSVC), `DEFER_SUPPORTED` is `0`. DEFER macros are
+**not defined** by default to prevent silent failure.
+
+If a macro is used without being defined, you get a clear compile-time error:
+```c
+error: undefined identifier 'DEFER_FREE'
+```
+
+If you want no-op fallback (not recommended), explicitly define `DEFER_ALLOW_NOOP_FALLBACK`
+before including `defer.h`:
 
 ```c
-#if !DEFER_SUPPORTED
-#  error "defer.h requires GCC or Clang"
-#endif
+#define DEFER_ALLOW_NOOP_FALLBACK
+#include "defer.h"
+
+DEFER_FREE(ptr);  /* becomes a no-op */
 ```
+
+**Warning:** With this fallback, cleanup code will not run. Use only if you understand the risks.
 
 ---
 

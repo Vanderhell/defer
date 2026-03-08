@@ -42,6 +42,7 @@ If confirmed, a fix will be released within **30 days** with full credit to the 
 
 ## Known Limitations (not vulnerabilities)
 
-- MSVC is unsupported — `DEFER_SUPPORTED` will be `0` and a `#warning` is emitted
+- MSVC is unsupported — `DEFER_SUPPORTED` will be `0` and macros are undefined by default to prevent silent failure. Use `DEFER_ALLOW_NOOP_FALLBACK` only if you fully understand the risks.
 - Cleanup order is LIFO (last declared, first cleaned) — this is intentional and matches RAII semantics
 - `DEFER(fn, ctx)` uses a `void*` cast — caller is responsible for correct function signature
+- pthread support requires explicit `DEFER_WITH_PTHREAD` before including `defer.h`

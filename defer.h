@@ -38,10 +38,11 @@
 #  define DEFER_SUPPORTED 1
 #else
 #  define DEFER_SUPPORTED 0
-#  warning "defer.h: __attribute__((cleanup)) not supported on this compiler. DEFER macros are no-ops."
 #endif
 
 #if DEFER_SUPPORTED
+
+#include <stdlib.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -78,9 +79,14 @@ static inline void _defer_run(_defer_slot_t *slot)
 /*
  * DEFER(fn, ctx)
  *
- * Schedule fn(ctx) to run when the current scope exits.
- * fn must have signature: void fn(void *)
- * Multiple DEFERs unwind in LIFO order (last declared, first run).
+ * Low-level macro. Schedule fn(ctx) to run when the current scope exits.
+ *
+ * Contract:
+ *   - fn must have exact signature:  void fn(void *)
+ *   - ctx is passed as-is, cast to (void *)
+ *   - Multiple DEFERs unwind in LIFO order (last declared, first run).
+ *   - Supported on: GCC 3.4+, Clang 3.0+, ARM GCC, AVR GCC
+ *   - Unsupported on: MSVC, and other compilers without __attribute__((cleanup))
  *
  * Example:
  *   pthread_mutex_lock(&mtx);
@@ -97,7 +103,7 @@ static inline void _defer_free(void *pp)
 {
     void **p = (void **)pp;
     if (p && *p) {
-        __builtin_free(*p);
+        free(*p);
         *p = (void *)0;
     }
 }
@@ -105,8 +111,13 @@ static inline void _defer_free(void *pp)
 /*
  * DEFER_FREE(ptr)
  *
- * Calls free(ptr) on scope exit. NULL-safe.
- * Also NULLs the pointer after freeing (use-after-free protection).
+ * Automatically call free(ptr) on scope exit. Portable helper macro.
+ *
+ * Contract:
+ *   - ptr is a lvalue (local variable, not a temporary).
+ *   - After cleanup, ptr is set to NULL (use-after-free protection).
+ *   - NULL pointers are safely ignored.
+ *   - Available on supported compilers only (see DEFER_SUPPORTED).
  *
  * Example:
  *   void *buf = malloc(256);
@@ -131,7 +142,14 @@ static inline void _defer_fclose(void *pp)
 /*
  * DEFER_FCLOSE(fp)
  *
- * Calls fclose(fp) on scope exit. NULL-safe.
+ * Automatically call fclose(fp) on scope exit. Portable helper macro.
+ *
+ * Contract:
+ *   - fp is a lvalue (local variable, not a temporary).
+ *   - After cleanup, fp is set to NULL.
+ *   - NULL pointers are safely ignored.
+ *   - Requires <stdio.h> (included automatically by defer.h).
+ *   - Available on supported compilers only.
  *
  * Example:
  *   FILE *f = fopen("x.txt", "r");
@@ -157,7 +175,15 @@ static inline void _defer_close(void *pp)
 /*
  * DEFER_CLOSE(fd)
  *
- * Calls close(fd) on scope exit. Safe for fd < 0.
+ * Automatically call close(fd) on scope exit. POSIX platforms only.
+ *
+ * Contract:
+ *   - fd is a lvalue (local variable, not a temporary).
+ *   - After cleanup, fd is set to -1 (closed/invalid state).
+ *   - Negative values are safely ignored.
+ *   - Requires: __unix__ or __APPLE__ (POSIX platforms).
+ *   - Requires <unistd.h> (included automatically when available).
+ *   - Available on supported compilers only.
  *
  * Example:
  *   int fd = open("x.txt", O_RDONLY);
@@ -170,7 +196,12 @@ static inline void _defer_close(void *pp)
 #endif /* __unix__ || __APPLE__ */
 
 /* ── pthread mutex helper ─────────────────────────────────────────────── */
-#if defined(_PTHREAD_H) || defined(DEFER_WITH_PTHREAD)
+#if defined(DEFER_WITH_PTHREAD)
+#include <pthread.h>
+#endif
+
+#if defined(DEFER_WITH_PTHREAD)
+
 static inline void _defer_mutex_unlock(void *pp)
 {
     pthread_mutex_t *mp = (pthread_mutex_t *)pp;
@@ -181,17 +212,27 @@ static inline void _defer_mutex_unlock(void *pp)
 /*
  * DEFER_UNLOCK(mtx_ptr)
  *
- * Calls pthread_mutex_unlock(mtx_ptr) on scope exit.
- * mtx_ptr must be a pointer to pthread_mutex_t.
+ * Automatically call pthread_mutex_unlock(mtx_ptr) on scope exit.
+ * Thread-safe resource cleanup helper for mutex-protected critical sections.
+ *
+ * Contract:
+ *   - Available ONLY when DEFER_WITH_PTHREAD is defined before including defer.h.
+ *   - mtx_ptr is a pointer to a locked pthread_mutex_t.
+ *   - mtx_ptr must remain valid for the entire scope.
+ *   - defer.h will include <pthread.h> automatically when DEFER_WITH_PTHREAD is set.
+ *   - POSIX/pthread environments only. Requires GCC 3.4+, Clang 3.0+, or ARM GCC.
  *
  * Example:
+ *   #define DEFER_WITH_PTHREAD
+ *   #include "defer.h"
+ *   ...
  *   pthread_mutex_lock(&g_mtx);
  *   DEFER_UNLOCK(&g_mtx);
  */
 #define DEFER_UNLOCK(mtx_ptr) \
     DEFER(_defer_mutex_unlock, (mtx_ptr))
 
-#endif /* pthread */
+#endif /* DEFER_WITH_PTHREAD */
 
 #ifdef __cplusplus
 }
@@ -199,12 +240,37 @@ static inline void _defer_mutex_unlock(void *pp)
 
 #else /* !DEFER_SUPPORTED */
 
-/* Unsupported compiler — macros are no-ops, code still compiles */
+/*
+ * UNSUPPORTED COMPILER FALLBACK
+ *
+ * The current compiler does not support __attribute__((cleanup)), which is
+ * required for defer.h to function.
+ *
+ * By default, DEFER macros are NOT defined. Using them will produce a
+ * compile-time "undefined identifier" error, preventing silent failure of
+ * cleanup code.
+ *
+ * If you understand the risk and explicitly want no-op behavior, define
+ * DEFER_ALLOW_NOOP_FALLBACK before including defer.h:
+ *
+ *   #define DEFER_ALLOW_NOOP_FALLBACK
+ *   #include "defer.h"
+ *
+ * With this flag, DEFER macros become no-ops on unsupported compilers.
+ * WARNING: Cleanup code will not run. Use only if you are certain that your
+ * application does not rely on deferred cleanup.
+ */
+
+#ifdef DEFER_ALLOW_NOOP_FALLBACK
+
+/* Explicit opt-in — macros are no-ops. C99 compatible. */
 #define DEFER(fn, ctx)    ((void)0)
 #define DEFER_FREE(ptr)   ((void)0)
 #define DEFER_FCLOSE(fp)  ((void)0)
 #define DEFER_CLOSE(fd)   ((void)0)
 #define DEFER_UNLOCK(m)   ((void)0)
+
+#endif /* DEFER_ALLOW_NOOP_FALLBACK */
 
 #endif /* DEFER_SUPPORTED */
 #endif /* DEFER_H */
