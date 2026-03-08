@@ -1,0 +1,34 @@
+name: Feature Request
+description: Suggest a new helper or improvement
+labels: ["enhancement"]
+
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Before requesting a feature, check that it fits the project philosophy:
+        **single header, zero allocation, portable, minimal API.**
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem does this solve?
+      placeholder: "I keep writing DEFER(munmap, ...) manually and it's verbose because..."
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed API
+      render: c
+      placeholder: |
+        DEFER_MUNMAP(ptr, length);
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives you considered
+      placeholder: "I could use DEFER(munmap, ...) but..."

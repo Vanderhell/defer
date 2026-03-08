@@ -1,0 +1,123 @@
+name: CI
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+
+jobs:
+
+  # ──────────────────────────────────────────────
+  # Native: GCC + Clang on Linux
+  # ──────────────────────────────────────────────
+  linux:
+    name: Linux (${{ matrix.compiler }}, C${{ matrix.std }})
+    runs-on: ubuntu-latest
+
+    strategy:
+      fail-fast: false
+      matrix:
+        compiler: [gcc, clang]
+        std: ["99", "11", "17"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: sudo apt-get install -y gcc clang
+
+      - name: Build & run tests
+        run: |
+          ${{ matrix.compiler }} \
+            -std=c${{ matrix.std }} \
+            -Wall -Wextra -Wpedantic -Werror \
+            -o test_defer \
+            tests/test_defer.c
+          ./test_defer
+
+  # ──────────────────────────────────────────────
+  # ARM cross-compile (Cortex-M, embedded target)
+  # ──────────────────────────────────────────────
+  arm-cross:
+    name: ARM Cortex-M cross-compile
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install ARM toolchain
+        run: sudo apt-get install -y gcc-arm-none-eabi
+
+      - name: Cross-compile (compile-only, no execution)
+        run: |
+          arm-none-eabi-gcc \
+            -std=c11 \
+            -mcpu=cortex-m4 \
+            -mthumb \
+            -Wall -Wextra -Werror \
+            -c tests/test_defer.c \
+            -o test_defer.o
+
+  # ──────────────────────────────────────────────
+  # Sanitizers (UB, address, leak)
+  # ──────────────────────────────────────────────
+  sanitizers:
+    name: Sanitizers (${{ matrix.san }})
+    runs-on: ubuntu-latest
+
+    strategy:
+      fail-fast: false
+      matrix:
+        san: [address,undefined]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build with -fsanitize=${{ matrix.san }}
+        run: |
+          clang \
+            -std=c11 \
+            -fsanitize=${{ matrix.san }} \
+            -fno-omit-frame-pointer \
+            -Wall -Wextra \
+            -o test_san \
+            tests/test_defer.c
+
+      - name: Run sanitized binary
+        run: ./test_san
+
+  # ──────────────────────────────────────────────
+  # Header self-containment check
+  # ──────────────────────────────────────────────
+  header-standalone:
+    name: Header is self-contained
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Compile defer.h alone
+        run: |
+          echo "#include \"defer.h\"" | \
+          gcc -std=c11 -Wall -Wextra -Werror \
+              -I. -x c - -fsyntax-only
+
+  # ──────────────────────────────────────────────
+  # macOS with Apple Clang
+  # ──────────────────────────────────────────────
+  macos:
+    name: macOS (Apple Clang)
+    runs-on: macos-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build & run tests
+        run: |
+          clang \
+            -std=c11 \
+            -Wall -Wextra -Werror \
+            -o test_defer \
+            tests/test_defer.c
+          ./test_defer

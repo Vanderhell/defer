@@ -1,0 +1,61 @@
+name: Bug Report
+description: Something doesn't compile or behaves incorrectly
+labels: ["bug"]
+
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Please fill in as much detail as possible.
+        A minimal reproducer saves a lot of back-and-forth.
+
+  - type: input
+    id: compiler
+    attributes:
+      label: Compiler & version
+      placeholder: "gcc 12.3.0 / arm-none-eabi-gcc 10.3.1 / clang 16.0.0"
+    validations:
+      required: true
+
+  - type: input
+    id: platform
+    attributes:
+      label: Platform / architecture
+      placeholder: "Linux x86-64 / STM32 Cortex-M4 / AVR ATmega328"
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: defer.h version
+      placeholder: "v0.1.0"
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproducer
+    attributes:
+      label: Minimal reproducer
+      render: c
+      placeholder: |
+        #include "defer.h"
+        int main(void) {
+            // ...
+        }
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior / error output
+    validations:
+      required: true
