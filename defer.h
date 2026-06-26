@@ -28,13 +28,7 @@
 #define DEFER_VERSION "1.0.0"
 
 /* feature detection */
-#if defined(__has_attribute)
-#  if __has_attribute(cleanup)
-#    define DEFER_SUPPORTED 1
-#  else
-#    define DEFER_SUPPORTED 0
-#  endif
-#elif defined(__GNUC__)
+#if defined(__clang__) || defined(__GNUC__)
 #  if (__GNUC__ > 3) || (__GNUC__ == 3 && __GNUC_MINOR__ >= 4)
 #    define DEFER_SUPPORTED 1
 #  else
@@ -53,21 +47,8 @@
 #define DEFER_DETAIL_CONCAT_IMPL(a, b) a##b
 #define DEFER_DETAIL_CONCAT(a, b) DEFER_DETAIL_CONCAT_IMPL(a, b)
 
-#if defined(__clang__) && defined(__has_warning)
-#  if __has_warning("-Wc2y-extensions")
-#    define DEFER_DETAIL_CLANG_COUNTER_DIAGNOSTIC_PUSH \
-         _Pragma("clang diagnostic push") \
-         _Pragma("clang diagnostic ignored \"-Wc2y-extensions\"")
-#    define DEFER_DETAIL_CLANG_COUNTER_DIAGNOSTIC_POP \
-         _Pragma("clang diagnostic pop")
-#  else
-#    define DEFER_DETAIL_CLANG_COUNTER_DIAGNOSTIC_PUSH
-#    define DEFER_DETAIL_CLANG_COUNTER_DIAGNOSTIC_POP
-#  endif
-#else
-#  define DEFER_DETAIL_CLANG_COUNTER_DIAGNOSTIC_PUSH
-#  define DEFER_DETAIL_CLANG_COUNTER_DIAGNOSTIC_POP
-#endif
+#define DEFER_DETAIL_CLANG_COUNTER_DIAGNOSTIC_PUSH
+#define DEFER_DETAIL_CLANG_COUNTER_DIAGNOSTIC_POP
 
 #if DEFER_SUPPORTED
 

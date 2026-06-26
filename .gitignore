@@ -1,0 +1,13 @@
+/prompts
+/build
+/build-wsl-gcc-debug
+verify_wsl.sh
+/build-wsl-gcc-release
+/build-wsl-clang-debug
+/build-wsl-analysis
+/build-wsl-asan
+/build-wsl-clang-release
+/build-wsl-consumer
+/build-wsl-lsan
+/build-wsl-ubsan
+WSL_VERIFICATION_RESULT.txt

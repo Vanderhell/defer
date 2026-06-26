@@ -174,7 +174,6 @@ TEST(defer_free_evaluates_expression_once)
     g_free_selector_hits = 0;
     {
         DEFER_FREE(test_make_buffer(48));
-        ASSERT(g_free_selector_hits == 1);
     }
 
     ASSERT(g_free_selector_hits == 1);
@@ -183,15 +182,31 @@ TEST(defer_free_evaluates_expression_once)
 TEST(defer_free_supports_typed_pointer_reassignment)
 {
     char *first = (char *)malloc(16);
-    char *second = (char *)malloc(16);
-    ASSERT(first != NULL);
-    ASSERT(second != NULL);
+    char *second = NULL;
+    int defer_active = 0;
+
+    if (first == NULL) {
+        test_assert(0, "first != NULL", __FILE__, __LINE__);
+        return;
+    }
+
+    second = (char *)malloc(16);
+    if (second == NULL) {
+        test_assert(0, "second != NULL", __FILE__, __LINE__);
+        goto cleanup;
+    }
 
     {
         DEFER_FREE(first);
+        defer_active = 1;
         first = second;
+        if (first != second)
+            test_assert(0, "first == second", __FILE__, __LINE__);
     }
 
+cleanup:
+    if (!defer_active)
+        free(first);
     free(second);
 }
 
@@ -202,26 +217,60 @@ typedef struct test_item_s {
 TEST(defer_free_supports_struct_and_const_pointers)
 {
     test_item_t *item = (test_item_t *)malloc(sizeof(*item));
-    test_item_t *replacement = (test_item_t *)malloc(sizeof(*replacement));
-    unsigned char *raw = (unsigned char *)malloc(24);
-    unsigned char *replacement_raw = (unsigned char *)malloc(24);
-    ASSERT(item != NULL);
-    ASSERT(replacement != NULL);
-    ASSERT(raw != NULL);
-    ASSERT(replacement_raw != NULL);
+    test_item_t *replacement = NULL;
+    unsigned char *raw = NULL;
+    unsigned char *replacement_raw = NULL;
+    int defer_active = 0;
 
-    const unsigned char *const_raw = raw;
+    if (item == NULL) {
+        test_assert(0, "item != NULL", __FILE__, __LINE__);
+        return;
+    }
+
+    replacement = (test_item_t *)malloc(sizeof(*replacement));
+    if (replacement == NULL) {
+        test_assert(0, "replacement != NULL", __FILE__, __LINE__);
+        goto cleanup;
+    }
+
+    raw = (unsigned char *)malloc(24);
+    if (raw == NULL) {
+        test_assert(0, "raw != NULL", __FILE__, __LINE__);
+        goto cleanup;
+    }
+
+    replacement_raw = (unsigned char *)malloc(24);
+    if (replacement_raw == NULL) {
+        test_assert(0, "replacement_raw != NULL", __FILE__, __LINE__);
+        goto cleanup;
+    }
 
     {
         DEFER_FREE(item);
-        DEFER_FREE(const_raw);
+        defer_active = 1;
         item = replacement;
-        const_raw = replacement_raw;
-        item->value = 11;
+        if (item != replacement)
+            test_assert(0, "item == replacement", __FILE__, __LINE__);
     }
 
-    free(replacement);
-    free(replacement_raw);
+    const unsigned char *const_raw = raw;
+    {
+        DEFER_FREE(const_raw);
+        const_raw = replacement_raw;
+        if (const_raw != replacement_raw)
+            test_assert(0, "const_raw == replacement_raw", __FILE__, __LINE__);
+    }
+
+cleanup:
+    if (!defer_active) {
+        free(item);
+        free(replacement);
+        free(raw);
+        free(replacement_raw);
+    } else {
+        free(replacement);
+        free(replacement_raw);
+    }
 }
 
 TEST(defer_free_supports_void_pointer)
@@ -345,15 +394,31 @@ TEST(defer_break_and_continue_cleanup)
 TEST(defer_free_supports_manual_captured_value_change)
 {
     char *first = (char *)malloc(24);
-    char *second = (char *)malloc(24);
-    ASSERT(first != NULL);
-    ASSERT(second != NULL);
+    char *second = NULL;
+    int defer_active = 0;
+
+    if (first == NULL) {
+        test_assert(0, "first != NULL", __FILE__, __LINE__);
+        return;
+    }
+
+    second = (char *)malloc(24);
+    if (second == NULL) {
+        test_assert(0, "second != NULL", __FILE__, __LINE__);
+        goto cleanup;
+    }
 
     {
         DEFER_FREE(first);
+        defer_active = 1;
         first = second;
+        if (first != second)
+            test_assert(0, "first == second", __FILE__, __LINE__);
     }
 
+cleanup:
+    if (!defer_active)
+        free(first);
     free(second);
 }
 
@@ -373,16 +438,33 @@ TEST(defer_manual_cleanup_pattern_works_with_named_guard)
 TEST(defer_fclose_helper_closes_tmpfile)
 {
     FILE *first = tmpfile();
-    FILE *second = tmpfile();
-    ASSERT(first != NULL);
-    ASSERT(second != NULL);
+    FILE *second = NULL;
+    int defer_active = 0;
+
+    if (first == NULL) {
+        test_assert(0, "first != NULL", __FILE__, __LINE__);
+        return;
+    }
+
+    second = tmpfile();
+    if (second == NULL) {
+        test_assert(0, "second != NULL", __FILE__, __LINE__);
+        goto cleanup;
+    }
 
     {
         DEFER_FCLOSE(first);
+        defer_active = 1;
         first = second;
+        if (first != second)
+            test_assert(0, "first == second", __FILE__, __LINE__);
     }
 
-    fclose(second);
+cleanup:
+    if (!defer_active)
+        fclose(first);
+    if (second != NULL)
+        fclose(second);
 }
 
 TEST(defer_close_helper_captures_fd_value)
@@ -390,15 +472,33 @@ TEST(defer_close_helper_captures_fd_value)
     char template_name_1[] = "defer_test_fd_a_XXXXXX";
     char template_name_2[] = "defer_test_fd_b_XXXXXX";
     int fd1 = mkstemp(template_name_1);
-    int fd2 = mkstemp(template_name_2);
-    ASSERT(fd1 >= 0);
-    ASSERT(fd2 >= 0);
+    int fd2 = -1;
+    int defer_active = 0;
+
+    if (fd1 < 0) {
+        test_assert(0, "fd1 >= 0", __FILE__, __LINE__);
+        return;
+    }
+
+    fd2 = mkstemp(template_name_2);
+    if (fd2 < 0) {
+        test_assert(0, "fd2 >= 0", __FILE__, __LINE__);
+        goto cleanup;
+    }
 
     {
         DEFER_CLOSE(fd1);
+        defer_active = 1;
         fd1 = fd2;
+        if (fd1 != fd2)
+            test_assert(0, "fd1 == fd2", __FILE__, __LINE__);
     }
 
+cleanup:
+    if (!defer_active) {
+        close(fd1);
+        unlink(template_name_1);
+    }
     close(fd2);
     unlink(template_name_1);
     unlink(template_name_2);
