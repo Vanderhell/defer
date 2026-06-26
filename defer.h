@@ -22,10 +22,10 @@
 #define DEFER_H
 
 /* version */
-#define DEFER_VERSION_MAJOR 1
+#define DEFER_VERSION_MAJOR 2
 #define DEFER_VERSION_MINOR 0
 #define DEFER_VERSION_PATCH 0
-#define DEFER_VERSION "1.0.0"
+#define DEFER_VERSION "2.0.0"
 
 /* feature detection */
 #if defined(__clang__) || defined(__GNUC__)

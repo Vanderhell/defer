@@ -121,6 +121,8 @@ The test suite covers:
 - compile-fail fixtures for invalid usage
 - an external `find_package(defer CONFIG REQUIRED)` consumer
 
+Verified WSL coverage is recorded in [docs/verification.md](docs/verification.md).
+
 ## License
 
 MIT. See [LICENSE](LICENSE).
