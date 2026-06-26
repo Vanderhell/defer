@@ -1,28 +1,33 @@
-/*
- * examples/mutex.c — Mutex handling with defer.h
- *
- * Demonstrates: DEFER_UNLOCK with pthread_mutex.
- * Compile: gcc -std=c11 -o mutex examples/mutex.c -lpthread
- */
-
-#define _POSIX_C_SOURCE 200809L
-#define DEFER_WITH_PTHREAD
 #include <stdio.h>
-#include <stdlib.h>
-#include <pthread.h>
+
+#if defined(__has_include)
+#  if __has_include(<pthread.h>)
+#    define DEFER_EXAMPLE_HAVE_PTHREAD 1
+#  endif
+#endif
+
+#if defined(DEFER_EXAMPLE_HAVE_PTHREAD)
+#  define DEFER_WITH_PTHREAD
+#  include <pthread.h>
+#endif
 
 #include "../defer.h"
 
-static pthread_mutex_t g_mtx = PTHREAD_MUTEX_INITIALIZER;
-static int             g_counter = 0;
+#if defined(DEFER_EXAMPLE_HAVE_PTHREAD)
+
+static pthread_mutex_t g_mutex = PTHREAD_MUTEX_INITIALIZER;
+static int g_counter = 0;
 
 static int increment_safe(int amount)
 {
-    pthread_mutex_lock(&g_mtx);
-    DEFER_UNLOCK(&g_mtx); /* unlocks on any return path */
+    int rc = pthread_mutex_lock(&g_mutex);
+    if (rc != 0)
+        return -1;
+
+    DEFER_UNLOCK(&g_mutex);
 
     if (amount < 0)
-        return -1; /* mutex unlocked automatically */
+        return -1;
 
     g_counter += amount;
     return g_counter;
@@ -30,7 +35,7 @@ static int increment_safe(int amount)
 
 int main(void)
 {
-    printf("defer.h — mutex example\n\n");
+    printf("defer.h - mutex example\n\n");
 
     printf("  increment(5)  = %d\n", increment_safe(5));
     printf("  increment(3)  = %d\n", increment_safe(3));
@@ -38,6 +43,17 @@ int main(void)
     printf("  increment(2)  = %d\n", increment_safe(2));
     printf("  final counter = %d\n", g_counter);
 
-    printf("\nDone. Mutex never leaked.\n");
+    printf("\nDone. Mutex is unlocked only after a successful lock.\n");
     return 0;
 }
+
+#else
+
+int main(void)
+{
+    printf("defer.h - mutex example\n\n");
+    printf("  pthread.h unavailable on this platform.\n");
+    return 0;
+}
+
+#endif

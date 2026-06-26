@@ -3,7 +3,7 @@ name: Release
 on:
   push:
     tags:
-      - 'v*.*.*'
+      - "v*.*.*"
 
 permissions:
   contents: write
@@ -16,28 +16,48 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Extract version from tag
-        id: version
-        run: echo "VERSION=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
-
-      - name: Extract changelog entry for this version
-        id: changelog
+      - name: Verify version metadata
         run: |
-          VERSION=${{ steps.version.outputs.VERSION }}
-          # Extract the section for this version from CHANGELOG.md
-          awk "/^## \[${VERSION#v}\]/,/^## \[/" CHANGELOG.md \
-            | head -n -1 \
-            > release_notes.txt
-          cat release_notes.txt
+          set -euo pipefail
+          tag="${GITHUB_REF#refs/tags/}"
+          header_version="$(awk '/^#define DEFER_VERSION "/ { gsub(/"/, "", $3); print $3; exit }' defer.h)"
+          if [ "v${header_version}" != "${tag}" ]; then
+            echo "tag ${tag} does not match header version ${header_version}" >&2
+            exit 1
+          fi
+          if ! grep -q "^## \[${header_version}\]" CHANGELOG.md; then
+            echo "missing changelog entry for ${header_version}" >&2
+            exit 1
+          fi
 
-      - name: Copy header to release artifact
-        run: cp defer.h defer-${{ steps.version.outputs.VERSION }}.h
+      - name: Build and test
+        run: |
+          cmake -S . -B build -DDEFER_BUILD_TESTS=ON -DDEFER_BUILD_EXAMPLES=ON
+          cmake --build build --parallel
+          ctest --test-dir build --output-on-failure
+
+      - name: Prepare release notes
+        run: |
+          set -euo pipefail
+          version="${GITHUB_REF#refs/tags/v}"
+          awk -v version="${version}" '
+            $0 ~ "^## \\[" version "\\]" { printing=1; next }
+            printing && $0 ~ "^## \\[" { exit }
+            printing { print }
+          ' CHANGELOG.md > release_notes.txt
+          if [ ! -s release_notes.txt ]; then
+            echo "release notes are empty" >&2
+            exit 1
+          fi
+
+      - name: Copy header
+        run: cp defer.h "defer-${GITHUB_REF#refs/tags/}.h"
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          name: "defer.h ${{ steps.version.outputs.VERSION }}"
+          name: "defer.h ${{ github.ref_name }}"
           body_path: release_notes.txt
-          files: defer-${{ steps.version.outputs.VERSION }}.h
+          files: "defer-${{ github.ref_name }}.h"
           draft: false
-          prerelease: ${{ contains(steps.version.outputs.VERSION, '-') }}
+          prerelease: ${{ contains(github.ref_name, '-') }}

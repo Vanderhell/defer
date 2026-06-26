@@ -2,122 +2,166 @@ name: CI
 
 on:
   push:
-    branches: [ main, master ]
+    branches: [main, master]
   pull_request:
-    branches: [ main, master ]
+    branches: [main, master]
 
 jobs:
-
-  # ──────────────────────────────────────────────
-  # Native: GCC + Clang on Linux
-  # ──────────────────────────────────────────────
-  linux:
-    name: Linux (${{ matrix.compiler }}, C${{ matrix.std }})
+  linux-strict:
+    name: Linux strict (${{ matrix.compiler }}, ${{ matrix.std }}, ${{ matrix.opt }})
     runs-on: ubuntu-latest
-
     strategy:
       fail-fast: false
       matrix:
         compiler: [gcc, clang]
-        std: ["99", "11", "17"]
+        std: [c99, c11]
+        opt: [-O0, -O2]
 
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install dependencies
-        run: sudo apt-get install -y gcc clang
+      - name: Install tools
+        run: sudo apt-get update && sudo apt-get install -y build-essential clang cppcheck clang-tidy cmake
 
-      - name: Build & run tests
+      - name: Build runtime test
         run: |
           ${{ matrix.compiler }} \
-            -std=c${{ matrix.std }} \
+            -std=${{ matrix.std }} \
+            ${{ matrix.opt }} \
             -Wall -Wextra -Wpedantic -Werror \
-            -o test_defer \
-            tests/test_defer.c
-          ./test_defer
+            -Wconversion -Wshadow -Wstrict-prototypes -Wmissing-prototypes \
+            -Wcast-function-type -Wstrict-aliasing=2 \
+            -pthread \
+            -I. \
+            tests/test_defer.c \
+            -o test_defer
 
-  # ──────────────────────────────────────────────
-  # ARM cross-compile (Cortex-M, embedded target)
-  # ──────────────────────────────────────────────
+      - name: Run runtime test
+        run: ./test_defer
+
+      - name: Build examples
+        run: |
+          ${{ matrix.compiler }} -std=${{ matrix.std }} ${{ matrix.opt }} -Wall -Wextra -Wpedantic -Werror -I. examples/memory.c -o memory
+          ${{ matrix.compiler }} -std=${{ matrix.std }} ${{ matrix.opt }} -Wall -Wextra -Wpedantic -Werror -I. examples/files.c -o files
+          ${{ matrix.compiler }} -std=${{ matrix.std }} ${{ matrix.opt }} -Wall -Wextra -Wpedantic -Werror -pthread -I. examples/mutex.c -o mutex
+
+      - name: Build multi-TU test
+        run: |
+          ${{ matrix.compiler }} -std=${{ matrix.std }} ${{ matrix.opt }} -Wall -Wextra -Wpedantic -Werror -I. \
+            tests/multi_tu_main.c tests/multi_tu_a.c tests/multi_tu_b.c -o multi_tu
+
+      - name: Compile-fail fixtures
+        run: |
+          set +e
+          ${{ matrix.compiler }} -std=${{ matrix.std }} -Wall -Wextra -Wpedantic -Werror -I. -fsyntax-only tests/compile_fail/incompatible_callback.c
+          test $? -ne 0
+          ${{ matrix.compiler }} -std=${{ matrix.std }} -Wall -Wextra -Wpedantic -Werror -I. -fsyntax-only tests/compile_fail/jump_into_guarded_scope.c
+          test $? -ne 0
+          ${{ matrix.compiler }} -std=${{ matrix.std }} -Wall -Wextra -Wpedantic -Werror -I. -fsyntax-only tests/compile_fail/dismiss_non_guard.c
+          test $? -ne 0
+
+  linux-sanitizers:
+    name: Linux sanitizers (${{ matrix.san }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        san: [address, undefined]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install tools
+        run: sudo apt-get update && sudo apt-get install -y clang
+
+      - name: Build with sanitizer
+        run: |
+          clang -std=c11 -O1 -g \
+            -fsanitize=${{ matrix.san }} \
+            -fno-omit-frame-pointer \
+            -Wall -Wextra -Wpedantic -Werror \
+            -pthread \
+            -I. \
+            tests/test_defer.c \
+            -o test_san
+
+      - name: Run sanitizer binary
+        run: ./test_san
+
+  linux-cmake:
+    name: Linux CMake, install, external consumer
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure
+        run: cmake -S . -B build -DDEFER_BUILD_TESTS=ON -DDEFER_BUILD_EXAMPLES=ON
+
+      - name: Build
+        run: cmake --build build --parallel
+
+      - name: Test
+        run: ctest --test-dir build --output-on-failure
+
+      - name: Install
+        run: cmake --install build --prefix "${{ github.workspace }}/_install"
+
+      - name: External consumer
+        run: cmake -S tests/consumer -B build/consumer -DCMAKE_PREFIX_PATH="${{ github.workspace }}/_install" && cmake --build build/consumer --parallel && ./build/consumer/defer_consumer
+
+  linux-analysis:
+    name: Linux static analysis
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install tools
+        run: sudo apt-get update && sudo apt-get install -y clang clang-tidy cppcheck
+
+      - name: clang --analyze
+        run: clang --analyze -std=c11 -I. tests/test_defer.c examples/memory.c examples/files.c examples/mutex.c
+
+      - name: clang-tidy
+        run: clang-tidy tests/test_defer.c -- -std=c11 -I.
+
+      - name: cppcheck
+        run: cppcheck --enable=warning,style,performance,portability --error-exitcode=1 -I . tests/test_defer.c examples/memory.c examples/files.c examples/mutex.c
+
   arm-cross:
-    name: ARM Cortex-M cross-compile
+    name: ARM freestanding compile-only
     runs-on: ubuntu-latest
 
     steps:
       - uses: actions/checkout@v4
 
       - name: Install ARM toolchain
-        run: sudo apt-get install -y gcc-arm-none-eabi
+        run: sudo apt-get update && sudo apt-get install -y gcc-arm-none-eabi
 
-      - name: Cross-compile (compile-only, no execution)
+      - name: Cross-compile core-only consumer
         run: |
           arm-none-eabi-gcc \
             -std=c11 \
-            -mcpu=cortex-m4 \
-            -mthumb \
+            -ffreestanding \
+            -nostdlib \
             -Wall -Wextra -Werror \
-            -c tests/test_defer.c \
-            -o test_defer.o
+            -I. \
+            -c tests/freestanding_core.c \
+            -o freestanding_core.o
 
-  # ──────────────────────────────────────────────
-  # Sanitizers (UB, address, leak)
-  # ──────────────────────────────────────────────
-  sanitizers:
-    name: Sanitizers (${{ matrix.san }})
-    runs-on: ubuntu-latest
-
-    strategy:
-      fail-fast: false
-      matrix:
-        san: [address,undefined]
+  windows-msvc-contract:
+    name: Windows MSVC unsupported-contract
+    runs-on: windows-latest
 
     steps:
       - uses: actions/checkout@v4
 
-      - name: Build with -fsanitize=${{ matrix.san }}
+      - name: Fail closed without explicit fallback
+        shell: powershell
         run: |
-          clang \
-            -std=c11 \
-            -fsanitize=${{ matrix.san }} \
-            -fno-omit-frame-pointer \
-            -Wall -Wextra \
-            -o test_san \
-            tests/test_defer.c
-
-      - name: Run sanitized binary
-        run: ./test_san
-
-  # ──────────────────────────────────────────────
-  # Header self-containment check
-  # ──────────────────────────────────────────────
-  header-standalone:
-    name: Header is self-contained
-    runs-on: ubuntu-latest
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Compile defer.h alone
-        run: |
-          echo "#include \"defer.h\"" | \
-          gcc -std=c11 -Wall -Wextra -Werror \
-              -I. -x c - -fsyntax-only
-
-  # ──────────────────────────────────────────────
-  # macOS with Apple Clang
-  # ──────────────────────────────────────────────
-  macos:
-    name: macOS (Apple Clang)
-    runs-on: macos-latest
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Build & run tests
-        run: |
-          clang \
-            -std=c11 \
-            -Wall -Wextra -Werror \
-            -o test_defer \
-            tests/test_defer.c
-          ./test_defer
+          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          $vs = & $vswhere -latest -property installationPath
+          if (-not $vs) { throw "Visual Studio not found" }
+          cmd /c "call `"$vs\Common7\Tools\VsDevCmd.bat`" -arch=x64 && cl /nologo /TC /c /W4 /WX /I. tests\compile_fail\msvc_requires_explicit_fallback.c"
+          if ($LASTEXITCODE -eq 0) { throw "Expected the unsupported-contract test to fail" }

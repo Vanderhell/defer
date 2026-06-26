@@ -29,7 +29,7 @@ body:
     id: version
     attributes:
       label: defer.h version
-      placeholder: "v0.1.0"
+      placeholder: "v1.0.0"
     validations:
       required: true
 

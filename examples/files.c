@@ -1,89 +1,110 @@
-/*
- * examples/files.c — File handling with defer.h
- *
- * Demonstrates: DEFER_FCLOSE, DEFER_FREE, DEFER_CLOSE
- *
- * Before defer.h — classic C with goto cleanup:
- *
- *   int process(const char *path) {
- *       FILE *f = fopen(path, "r");
- *       if (!f) return -1;
- *       void *buf = malloc(512);
- *       if (!buf) { fclose(f); return -1; }
- *       int rc = do_work(f, buf);
- *       free(buf);
- *       fclose(f);
- *       return rc;
- *   }
- *
- * After defer.h:
- */
+#if defined(_MSC_VER) && !defined(_CRT_SECURE_NO_WARNINGS)
+#  define _CRT_SECURE_NO_WARNINGS 1
+#endif
 
-#define _POSIX_C_SOURCE 200809L
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
+#define DEFER_ENABLE_STDIO_HELPER
+
 #include "../defer.h"
 
-static int count_lines(const char *path)
+typedef struct file_state_s {
+    FILE *fp;
+} file_state_t;
+
+static void file_close_cleanup(void *ctx)
 {
-    FILE *f = fopen(path, "r");
-    if (!f) return -1;
-    DEFER_FCLOSE(f);
+    file_state_t *state = (file_state_t *)ctx;
+    if (state->fp != NULL)
+        fclose(state->fp);
+}
 
-    char *line = NULL;
-    size_t cap  = 0;
-    int    lines = 0;
+static int count_lines(FILE *fp)
+{
+    int lines = 0;
+    int ch;
 
-    while (getline(&line, &cap, f) != -1)
-        lines++;
+    rewind(fp);
+    while ((ch = fgetc(fp)) != EOF) {
+        if (ch == '\n')
+            ++lines;
+    }
 
-    free(line); /* getline buffer — manual free (not allocated via our pattern) */
+    if (ferror(fp))
+        return -1;
+
     return lines;
 }
 
-static int copy_file(const char *src, const char *dst)
+static int copy_stream(FILE *src, FILE *dst)
 {
-    FILE *in = fopen(src, "rb");
-    if (!in) return -1;
-    DEFER_FCLOSE(in);
+    char buffer[128];
 
-    FILE *out = fopen(dst, "wb");
-    if (!out) return -1;
-    DEFER_FCLOSE(out);
+    rewind(src);
+    for (;;) {
+        size_t nread = fread(buffer, 1u, sizeof(buffer), src);
+        if (nread > 0) {
+            size_t nwritten = fwrite(buffer, 1u, nread, dst);
+            if (nwritten != nread)
+                return -1;
+        }
 
-    void *buf = malloc(4096);
-    if (!buf) return -1;
-    DEFER_FREE(buf);
+        if (nread < sizeof(buffer))
+            break;
+    }
 
-    size_t n;
-    while ((n = fread(buf, 1, 4096, in)) > 0)
-        fwrite(buf, 1, n, out);
+    if (ferror(src) || fflush(dst) != 0)
+        return -1;
 
-    printf("  Copied '%s' -> '%s'\n", src, dst);
     return 0;
-    /* buf freed, out closed, in closed — automatically, in LIFO order */
+}
+
+static int copy_and_verify(void)
+{
+    FILE *src = tmpfile();
+    if (src == NULL)
+        return -1;
+
+    DEFER_FCLOSE(src);
+
+    FILE *dst = tmpfile();
+    if (dst == NULL)
+        return -1;
+
+    file_state_t dst_state = { dst };
+    DEFER_NAMED(dst_guard, file_close_cleanup, &dst_state);
+
+    if (fputs("line one\nline two\nline three\n", src) == EOF)
+        return -1;
+
+    if (copy_stream(src, dst) != 0)
+        return -1;
+
+    rewind(dst);
+    if (count_lines(dst) != 3)
+        return -1;
+
+    {
+        int close_rc = fclose(dst);
+        dst_state.fp = NULL;
+        DEFER_DISMISS(dst_guard);
+        if (close_rc != 0)
+            return -1;
+    }
+
+    return count_lines(src);
 }
 
 int main(void)
 {
-    /* create a temp source file */
-    FILE *tmp = fopen("/tmp/defer_example_src.txt", "w");
-    if (!tmp) { perror("fopen"); return 1; }
-    fprintf(tmp, "line one\nline two\nline three\n");
-    fclose(tmp);
+    int lines = copy_and_verify();
 
-    printf("defer.h — files example\n\n");
+    printf("defer.h - files example\n\n");
+    if (lines >= 0)
+        printf("  Lines copied: %d\n", lines);
 
-    int n = count_lines("/tmp/defer_example_src.txt");
-    printf("  Lines: %d\n", n);
-
-    copy_file("/tmp/defer_example_src.txt", "/tmp/defer_example_dst.txt");
-
-    remove("/tmp/defer_example_src.txt");
-    remove("/tmp/defer_example_dst.txt");
-
-    printf("\nDone. No goto cleanup, no manual fclose/free.\n");
-    return 0;
+    printf("\nDone. Resources are closed explicitly when close errors matter.\n");
+    return lines >= 0 ? 0 : 1;
 }

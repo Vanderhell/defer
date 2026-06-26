@@ -1,74 +1,45 @@
 # Contributing to defer.h
 
-First off — thank you. This is a small project with a focused scope.  
-Keep that scope in mind before opening a PR.
+This project stays intentionally small:
 
----
+- single public header
+- no heap allocation inside the library
+- no runtime registry
+- no C++ support claims
 
-## Philosophy
+## Before you change code
 
-- **Single header.** No build system required. Ever.
-- **Zero allocation.** No `malloc` inside the library itself.
-- **Portable.** If it doesn't work on GCC ARM, it doesn't ship.
-- **Minimal API surface.** Less is more.
+- Read the existing tests, examples, and workflows.
+- Keep changes focused.
+- Do not weaken warnings, sanitizers, or negative tests to make the tree pass.
 
-If your contribution grows the API significantly, open an issue first to discuss.
+## What to include
 
----
+- A code change that addresses the issue
+- A test that proves the behavior
+- Documentation updates if the contract changed
 
-## How to contribute
+## Local checks
 
-### Bug reports
+Run the strictest build path available in your environment. At minimum:
 
-Open an issue with:
-- Compiler + version (`gcc --version`)
-- Platform / architecture (x86-64, ARM Cortex-M, AVR, ...)
-- Minimal reproducer (20 lines max)
-- Expected vs actual behavior
+```sh
+cmake -S . -B build
+cmake --build build
+ctest --test-dir build --output-on-failure
+```
 
-### Feature requests
+If you are working in a Unix-like toolchain, also run the Makefile targets for
+strict GCC and Clang builds plus sanitizers.
 
-Open an issue before writing code.  
-Describe the real problem, not just the proposed solution.
+## Style
 
-### Pull requests
+- C99 minimum
+- ASCII unless the file already uses Unicode
+- `snake_case` for functions and variables
+- `DEFER_` for public macros
 
-1. Fork the repo and create a branch: `git checkout -b fix/your-fix`
-2. Make your change — keep it focused and small
-3. Add or update tests in `tests/test_defer.c`
-4. Verify locally:
-   ```sh
-   gcc -Wall -Wextra -o test tests/test_defer.c && ./test
-   clang -Wall -Wextra -o test tests/test_defer.c && ./test
-   ```
-5. Open the PR — describe what and why, not just how
+## Scope
 
----
-
-## What will be accepted
-
-| Type | Likely accepted |
-|---|---|
-| Bug fix | ✅ Yes |
-| New NULL-safe helper (DEFER_MUNMAP, ...) | ✅ If it's common enough |
-| Compiler portability fix | ✅ Yes |
-| Docs / README improvement | ✅ Yes |
-| New abstraction layer on top | ❌ Out of scope |
-| Dynamic defer stack / heap usage | ❌ Against philosophy |
-| C++ support | ❌ Different project |
-
----
-
-## Code style
-
-- C99 (required for portability)
-- 4 spaces, no tabs
-- `snake_case` for everything
-- Macros in `SCREAMING_SNAKE_CASE`
-- Comments in English
-
----
-
-## License
-
-By contributing, you agree your code will be released under the [MIT License](LICENSE).
+If a change would add a runtime registry, heap-backed defer stack, or a C++
+layer, stop and discuss the direction first.

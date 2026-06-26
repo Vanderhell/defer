@@ -1,276 +1,229 @@
 /*
- * defer.h — Automatic resource cleanup for C
+ * defer.h - Automatic resource cleanup for C
  *
- * Single header, zero allocation, GCC/Clang/ARM Cortex-M.
- * No more goto cleanup.
+ * Single header, zero allocation, cleanup-attribute based scope guards.
  *
- * MIT License — https://github.com/Vanderhell/defer.h
+ * Public API:
+ *   DEFER(fn, ctx)
+ *   DEFER_NAMED(name, fn, ctx)
+ *   DEFER_DISMISS(name)
  *
- * USAGE:
+ * Optional helpers are opt-in:
+ *   DEFER_ENABLE_FREE_HELPER
+ *   DEFER_ENABLE_STDIO_HELPER
+ *   DEFER_ENABLE_UNISTD_HELPER
+ *   DEFER_WITH_PTHREAD
  *
- *   FILE *f = fopen("x.txt", "r");
- *   DEFER_FCLOSE(f);
- *
- *   void *buf = malloc(256);
- *   DEFER_FREE(buf);
- *
- *   // resources released automatically on scope exit (LIFO order)
- *
- * COMPILER SUPPORT:
- *   GCC   3.4+  — full support via __attribute__((cleanup))
- *   Clang 3.0+  — full support via __attribute__((cleanup))
- *   ARM   GCC   — full support (Cortex-M, Cortex-A, ...)
- *   AVR   GCC   — full support
- *   MSVC        — NOT supported, DEFER_SUPPORTED == 0
+ * Unsupported compilers do not get fallback macros unless the caller
+ * explicitly defines DEFER_ALLOW_NOOP_FALLBACK.
  */
 
 #ifndef DEFER_H
 #define DEFER_H
 
-/* ── version ──────────────────────────────────────────────────────────── */
-#define DEFER_VERSION_MAJOR 0
-#define DEFER_VERSION_MINOR 1
+/* version */
+#define DEFER_VERSION_MAJOR 1
+#define DEFER_VERSION_MINOR 0
 #define DEFER_VERSION_PATCH 0
-#define DEFER_VERSION "0.1.0"
+#define DEFER_VERSION "1.0.0"
 
-/* ── compiler detection ───────────────────────────────────────────────── */
-#if defined(__GNUC__) || defined(__clang__)
-#  define DEFER_SUPPORTED 1
+/* feature detection */
+#if defined(__has_attribute)
+#  if __has_attribute(cleanup)
+#    define DEFER_SUPPORTED 1
+#  else
+#    define DEFER_SUPPORTED 0
+#  endif
+#elif defined(__GNUC__)
+#  if (__GNUC__ > 3) || (__GNUC__ == 3 && __GNUC_MINOR__ >= 4)
+#    define DEFER_SUPPORTED 1
+#  else
+#    define DEFER_SUPPORTED 0
+#  endif
 #else
 #  define DEFER_SUPPORTED 0
 #endif
 
+#if defined(__clang__)
+/* Clang treats __COUNTER__ as a C2y extension; this header uses it
+ * intentionally for unique guard names on supported compilers. */
+#  pragma clang diagnostic ignored "-Wc2y-extensions"
+#endif
+
+#if defined(__COUNTER__)
+#  define DEFER_DETAIL_UNIQUE_ID __COUNTER__
+#else
+#  define DEFER_DETAIL_UNIQUE_ID __LINE__
+#endif
+
+#define DEFER_DETAIL_CONCAT_IMPL(a, b) a##b
+#define DEFER_DETAIL_CONCAT(a, b) DEFER_DETAIL_CONCAT_IMPL(a, b)
+
 #if DEFER_SUPPORTED
 
-#include <stdlib.h>
+typedef void (*defer_detail_cleanup_fn)(void *);
 
-#ifdef __cplusplus
-extern "C" {
+typedef struct defer_detail_guard_s {
+    defer_detail_cleanup_fn fn;
+    void *ctx;
+    unsigned active;
+} defer_detail_guard_t;
+
+static inline void defer_detail_guard_cleanup(defer_detail_guard_t *guard)
+{
+    if (guard != 0 && guard->active && guard->fn != 0) {
+        guard->active = 0u;
+        guard->fn(guard->ctx);
+    }
+}
+
+#define DEFER_DETAIL_DECLARE_GUARD(name, fn, ctx)                              \
+    defer_detail_guard_t                                                      \
+        __attribute__((__cleanup__(defer_detail_guard_cleanup))) name = {      \
+            (fn), (ctx), 1u                                                    \
+        }
+
+#define DEFER(fn, ctx)                                                         \
+    DEFER_DETAIL_DECLARE_GUARD(                                                \
+        DEFER_DETAIL_CONCAT(defer_detail_guard_, DEFER_DETAIL_UNIQUE_ID),      \
+        (fn),                                                                  \
+        (ctx))
+
+#define DEFER_NAMED(name, fn, ctx)                                             \
+    DEFER_DETAIL_DECLARE_GUARD(name, (fn), (ctx))
+
+#define DEFER_DISMISS(name) ((name).active = 0u)
+
+#if defined(DEFER_ENABLE_FREE_HELPER)
+#  include <stdlib.h>
+
+typedef struct defer_detail_free_state_s {
+    const void *ptr;
+} defer_detail_free_state_t;
+
+static inline void defer_detail_free_cleanup(void *ctx)
+{
+    const defer_detail_free_state_t *state = (const defer_detail_free_state_t *)ctx;
+    if (state != 0 && state->ptr != 0)
+        free((void *)state->ptr);
+}
+
+#  define DEFER_DETAIL_DECLARE_FREE(ptr_expr, id)                              \
+    defer_detail_free_state_t DEFER_DETAIL_CONCAT(defer_detail_free_state_, id) = { \
+        (const void *)(ptr_expr)                                               \
+    };                                                                         \
+    DEFER_DETAIL_DECLARE_GUARD(                                                \
+        DEFER_DETAIL_CONCAT(defer_detail_free_guard_, id),                     \
+        defer_detail_free_cleanup,                                             \
+        &DEFER_DETAIL_CONCAT(defer_detail_free_state_, id))
+
+#  define DEFER_FREE(ptr_expr) DEFER_DETAIL_DECLARE_FREE((ptr_expr), DEFER_DETAIL_UNIQUE_ID)
 #endif
 
-/* ── internal machinery ───────────────────────────────────────────────── */
+#if defined(DEFER_ENABLE_STDIO_HELPER)
+#  include <stdio.h>
 
-/*
- * Internal slot: holds one deferred (function, context) pair.
- * Placed on the stack — zero heap usage.
- */
-typedef struct {
-    void (*_fn)(void *);
-    void *_ctx;
-} _defer_slot_t;
+typedef struct defer_detail_fclose_state_s {
+    FILE *fp;
+} defer_detail_fclose_state_t;
 
-/*
- * Called automatically by __attribute__((cleanup)) when the
- * variable goes out of scope. Never call this directly.
- */
-static inline void _defer_run(_defer_slot_t *slot)
+static inline void defer_detail_fclose_cleanup(void *ctx)
 {
-    if (slot->_fn)
-        slot->_fn(slot->_ctx);
+    const defer_detail_fclose_state_t *state = (const defer_detail_fclose_state_t *)ctx;
+    if (state != 0 && state->fp != 0)
+        fclose(state->fp);
 }
 
-/* Unique variable name per line — avoids clashes in same scope */
-#define _DEFER_CAT2(a, b) a##b
-#define _DEFER_CAT(a, b)  _DEFER_CAT2(a, b)
-#define _DEFER_VAR(pfx)   _DEFER_CAT(pfx, __LINE__)
+#  define DEFER_DETAIL_DECLARE_FCLOSE(fp_expr, id)                             \
+    defer_detail_fclose_state_t DEFER_DETAIL_CONCAT(defer_detail_fclose_state_, id) = { \
+        (fp_expr)                                                              \
+    };                                                                         \
+    DEFER_DETAIL_DECLARE_GUARD(                                                \
+        DEFER_DETAIL_CONCAT(defer_detail_fclose_guard_, id),                   \
+        defer_detail_fclose_cleanup,                                           \
+        &DEFER_DETAIL_CONCAT(defer_detail_fclose_state_, id))
 
-/* ── public API ───────────────────────────────────────────────────────── */
+#  define DEFER_FCLOSE(fp_expr) DEFER_DETAIL_DECLARE_FCLOSE((fp_expr), DEFER_DETAIL_UNIQUE_ID)
+#endif
 
-/*
- * DEFER(fn, ctx)
- *
- * Low-level macro. Schedule fn(ctx) to run when the current scope exits.
- *
- * Contract:
- *   - fn must have exact signature:  void fn(void *)
- *   - ctx is passed as-is, cast to (void *)
- *   - Multiple DEFERs unwind in LIFO order (last declared, first run).
- *   - Supported on: GCC 3.4+, Clang 3.0+, ARM GCC, AVR GCC
- *   - Unsupported on: MSVC, and other compilers without __attribute__((cleanup))
- *
- * Example:
- *   pthread_mutex_lock(&mtx);
- *   DEFER(_defer_mutex_unlock, &mtx);
- */
-#define DEFER(fn, ctx)                                                  \
-    _defer_slot_t __attribute__((cleanup(_defer_run)))                  \
-    _DEFER_VAR(_defer_slot_) = { (void (*)(void *))(fn), (void *)(ctx) }
+#if defined(DEFER_ENABLE_UNISTD_HELPER)
+#  include <unistd.h>
 
-/* ─── helpers ─────────────────────────────────────────────────────────── */
+typedef struct defer_detail_close_state_s {
+    int fd;
+} defer_detail_close_state_t;
 
-/* free() wrapper — accepts void** so cleanup attribute can pass &ptr */
-static inline void _defer_free(void *pp)
+static inline void defer_detail_close_cleanup(void *ctx)
 {
-    void **p = (void **)pp;
-    if (p && *p) {
-        free(*p);
-        *p = (void *)0;
-    }
+    const defer_detail_close_state_t *state = (const defer_detail_close_state_t *)ctx;
+    if (state != 0 && state->fd >= 0)
+        (void)close(state->fd);
 }
 
-/*
- * DEFER_FREE(ptr)
- *
- * Automatically call free(ptr) on scope exit. Portable helper macro.
- *
- * Contract:
- *   - ptr is a lvalue (local variable, not a temporary).
- *   - After cleanup, ptr is set to NULL (use-after-free protection).
- *   - NULL pointers are safely ignored.
- *   - Available on supported compilers only (see DEFER_SUPPORTED).
- *
- * Example:
- *   void *buf = malloc(256);
- *   if (!buf) return -1;
- *   DEFER_FREE(buf);
- */
-#define DEFER_FREE(ptr) \
-    DEFER(_defer_free, &(ptr))
+#  define DEFER_DETAIL_DECLARE_CLOSE(fd_expr, id)                              \
+    defer_detail_close_state_t DEFER_DETAIL_CONCAT(defer_detail_close_state_, id) = { \
+        (fd_expr)                                                              \
+    };                                                                         \
+    DEFER_DETAIL_DECLARE_GUARD(                                                \
+        DEFER_DETAIL_CONCAT(defer_detail_close_guard_, id),                    \
+        defer_detail_close_cleanup,                                            \
+        &DEFER_DETAIL_CONCAT(defer_detail_close_state_, id))
 
-/* ── FILE helpers ─────────────────────────────────────────────────────── */
-#include <stdio.h>
-
-static inline void _defer_fclose(void *pp)
-{
-    FILE **fp = (FILE **)pp;
-    if (fp && *fp) {
-        fclose(*fp);
-        *fp = (FILE *)0;
-    }
-}
-
-/*
- * DEFER_FCLOSE(fp)
- *
- * Automatically call fclose(fp) on scope exit. Portable helper macro.
- *
- * Contract:
- *   - fp is a lvalue (local variable, not a temporary).
- *   - After cleanup, fp is set to NULL.
- *   - NULL pointers are safely ignored.
- *   - Requires <stdio.h> (included automatically by defer.h).
- *   - Available on supported compilers only.
- *
- * Example:
- *   FILE *f = fopen("x.txt", "r");
- *   if (!f) return -1;
- *   DEFER_FCLOSE(f);
- */
-#define DEFER_FCLOSE(fp) \
-    DEFER(_defer_fclose, &(fp))
-
-/* ── POSIX fd helpers ─────────────────────────────────────────────────── */
-#if defined(__unix__) || defined(__APPLE__)
-#include <unistd.h>
-
-static inline void _defer_close(void *pp)
-{
-    int *fdp = (int *)pp;
-    if (fdp && *fdp >= 0) {
-        close(*fdp);
-        *fdp = -1;
-    }
-}
-
-/*
- * DEFER_CLOSE(fd)
- *
- * Automatically call close(fd) on scope exit. POSIX platforms only.
- *
- * Contract:
- *   - fd is a lvalue (local variable, not a temporary).
- *   - After cleanup, fd is set to -1 (closed/invalid state).
- *   - Negative values are safely ignored.
- *   - Requires: __unix__ or __APPLE__ (POSIX platforms).
- *   - Requires <unistd.h> (included automatically when available).
- *   - Available on supported compilers only.
- *
- * Example:
- *   int fd = open("x.txt", O_RDONLY);
- *   if (fd < 0) return -1;
- *   DEFER_CLOSE(fd);
- */
-#define DEFER_CLOSE(fd) \
-    DEFER(_defer_close, &(fd))
-
-#endif /* __unix__ || __APPLE__ */
-
-/* ── pthread mutex helper ─────────────────────────────────────────────── */
-#if defined(DEFER_WITH_PTHREAD)
-#include <pthread.h>
+#  define DEFER_CLOSE(fd_expr) DEFER_DETAIL_DECLARE_CLOSE((fd_expr), DEFER_DETAIL_UNIQUE_ID)
 #endif
 
 #if defined(DEFER_WITH_PTHREAD)
+#  include <pthread.h>
 
-static inline void _defer_mutex_unlock(void *pp)
+typedef struct defer_detail_unlock_state_s {
+    pthread_mutex_t *mutex;
+} defer_detail_unlock_state_t;
+
+static inline void defer_detail_unlock_cleanup(void *ctx)
 {
-    pthread_mutex_t *mp = (pthread_mutex_t *)pp;
-    if (mp)
-        pthread_mutex_unlock(mp);
+    const defer_detail_unlock_state_t *state = (const defer_detail_unlock_state_t *)ctx;
+    if (state != 0 && state->mutex != 0)
+        (void)pthread_mutex_unlock(state->mutex);
 }
 
-/*
- * DEFER_UNLOCK(mtx_ptr)
- *
- * Automatically call pthread_mutex_unlock(mtx_ptr) on scope exit.
- * Thread-safe resource cleanup helper for mutex-protected critical sections.
- *
- * Contract:
- *   - Available ONLY when DEFER_WITH_PTHREAD is defined before including defer.h.
- *   - mtx_ptr is a pointer to a locked pthread_mutex_t.
- *   - mtx_ptr must remain valid for the entire scope.
- *   - defer.h will include <pthread.h> automatically when DEFER_WITH_PTHREAD is set.
- *   - POSIX/pthread environments only. Requires GCC 3.4+, Clang 3.0+, or ARM GCC.
- *
- * Example:
- *   #define DEFER_WITH_PTHREAD
- *   #include "defer.h"
- *   ...
- *   pthread_mutex_lock(&g_mtx);
- *   DEFER_UNLOCK(&g_mtx);
- */
-#define DEFER_UNLOCK(mtx_ptr) \
-    DEFER(_defer_mutex_unlock, (mtx_ptr))
+#  define DEFER_DETAIL_DECLARE_UNLOCK(mutex_expr, id)                          \
+    defer_detail_unlock_state_t DEFER_DETAIL_CONCAT(defer_detail_unlock_state_, id) = { \
+        (mutex_expr)                                                           \
+    };                                                                         \
+    DEFER_DETAIL_DECLARE_GUARD(                                                \
+        DEFER_DETAIL_CONCAT(defer_detail_unlock_guard_, id),                   \
+        defer_detail_unlock_cleanup,                                           \
+        &DEFER_DETAIL_CONCAT(defer_detail_unlock_state_, id))
 
-#endif /* DEFER_WITH_PTHREAD */
-
-#ifdef __cplusplus
-}
+#  define DEFER_UNLOCK(mutex_expr) DEFER_DETAIL_DECLARE_UNLOCK((mutex_expr), DEFER_DETAIL_UNIQUE_ID)
 #endif
 
 #else /* !DEFER_SUPPORTED */
 
-/*
- * UNSUPPORTED COMPILER FALLBACK
- *
- * The current compiler does not support __attribute__((cleanup)), which is
- * required for defer.h to function.
- *
- * By default, DEFER macros are NOT defined. Using them will produce a
- * compile-time "undefined identifier" error, preventing silent failure of
- * cleanup code.
- *
- * If you understand the risk and explicitly want no-op behavior, define
- * DEFER_ALLOW_NOOP_FALLBACK before including defer.h:
- *
- *   #define DEFER_ALLOW_NOOP_FALLBACK
- *   #include "defer.h"
- *
- * With this flag, DEFER macros become no-ops on unsupported compilers.
- * WARNING: Cleanup code will not run. Use only if you are certain that your
- * application does not rely on deferred cleanup.
- */
+#if defined(DEFER_ALLOW_NOOP_FALLBACK)
 
-#ifdef DEFER_ALLOW_NOOP_FALLBACK
+#  define DEFER(fn, ctx) ((void)0)
+#  define DEFER_NAMED(name, fn, ctx) ((void)0)
+#  define DEFER_DISMISS(name) ((void)0)
 
-/* Explicit opt-in — macros are no-ops. C99 compatible. */
-#define DEFER(fn, ctx)    ((void)0)
-#define DEFER_FREE(ptr)   ((void)0)
-#define DEFER_FCLOSE(fp)  ((void)0)
-#define DEFER_CLOSE(fd)   ((void)0)
-#define DEFER_UNLOCK(m)   ((void)0)
+#  if defined(DEFER_ENABLE_FREE_HELPER)
+#    define DEFER_FREE(ptr_expr) ((void)0)
+#  endif
+
+#  if defined(DEFER_ENABLE_STDIO_HELPER)
+#    define DEFER_FCLOSE(fp_expr) ((void)0)
+#  endif
+
+#  if defined(DEFER_ENABLE_UNISTD_HELPER)
+#    define DEFER_CLOSE(fd_expr) ((void)0)
+#  endif
+
+#  if defined(DEFER_WITH_PTHREAD)
+#    define DEFER_UNLOCK(mutex_expr) ((void)0)
+#  endif
 
 #endif /* DEFER_ALLOW_NOOP_FALLBACK */
 
 #endif /* DEFER_SUPPORTED */
+
 #endif /* DEFER_H */
