@@ -329,7 +329,8 @@ static int test_early_return_helper(int *count_snapshot)
     test_reset_log();
     int token = 55;
     DEFER(test_log_id, &token);
-    ASSERT(token == 55);
+    if (token != 55)
+        test_assert(0, "token == 55", __FILE__, __LINE__);
     *count_snapshot = (int)g_log_count;
     return -1;
 }
@@ -356,7 +357,8 @@ static int test_goto_helper(void)
     }
 
 out:
-    ASSERT(token == 88);
+    if (token != 88)
+        test_assert(0, "token == 88", __FILE__, __LINE__);
     return 0;
 }
 
