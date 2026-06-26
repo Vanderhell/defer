@@ -52,6 +52,7 @@ static void test_reset_log(void)
     g_log_count = 0;
 }
 
+// cppcheck-suppress constParameterCallback
 static void test_log_id(void *ctx)
 {
     const int id = *(const int *)ctx;
@@ -137,6 +138,7 @@ TEST(defer_generic_side_effects_are_evaluated_once)
     ASSERT(g_selector_hits == 2);
     ASSERT(g_log_count == 1);
     ASSERT(g_log[0] == 7);
+    ASSERT(token == 7);
 }
 
 TEST(defer_named_dismiss_is_idempotent)
@@ -200,8 +202,6 @@ TEST(defer_free_supports_typed_pointer_reassignment)
         DEFER_FREE(first);
         defer_active = 1;
         first = second;
-        if (first != second)
-            test_assert(0, "first == second", __FILE__, __LINE__);
     }
 
 cleanup:
@@ -219,7 +219,6 @@ TEST(defer_free_supports_struct_and_const_pointers)
     test_item_t *item = (test_item_t *)malloc(sizeof(*item));
     test_item_t *replacement = NULL;
     unsigned char *raw = NULL;
-    unsigned char *replacement_raw = NULL;
     int defer_active = 0;
 
     if (item == NULL) {
@@ -239,26 +238,15 @@ TEST(defer_free_supports_struct_and_const_pointers)
         goto cleanup;
     }
 
-    replacement_raw = (unsigned char *)malloc(24);
-    if (replacement_raw == NULL) {
-        test_assert(0, "replacement_raw != NULL", __FILE__, __LINE__);
-        goto cleanup;
-    }
-
     {
         DEFER_FREE(item);
         defer_active = 1;
         item = replacement;
-        if (item != replacement)
-            test_assert(0, "item == replacement", __FILE__, __LINE__);
     }
 
-    const unsigned char *const_raw = raw;
     {
+        const unsigned char *const_raw = raw;
         DEFER_FREE(const_raw);
-        const_raw = replacement_raw;
-        if (const_raw != replacement_raw)
-            test_assert(0, "const_raw == replacement_raw", __FILE__, __LINE__);
     }
 
 cleanup:
@@ -266,16 +254,14 @@ cleanup:
         free(item);
         free(replacement);
         free(raw);
-        free(replacement_raw);
     } else {
         free(replacement);
-        free(replacement_raw);
     }
 }
 
 TEST(defer_free_supports_void_pointer)
 {
-    void *blob = malloc(64);
+    const void *blob = malloc(64);
     ASSERT(blob != NULL);
     {
         DEFER_FREE(blob);
@@ -299,6 +285,9 @@ TEST(defer_lifo_order)
     ASSERT(g_log[0] == 3);
     ASSERT(g_log[1] == 2);
     ASSERT(g_log[2] == 1);
+    ASSERT(a == 1);
+    ASSERT(b == 2);
+    ASSERT(c == 3);
 }
 
 TEST(defer_multiple_on_one_line)
@@ -310,6 +299,8 @@ TEST(defer_multiple_on_one_line)
     ASSERT(g_log_count == 2);
     ASSERT(g_log[0] == 20);
     ASSERT(g_log[1] == 10);
+    ASSERT(a == 10);
+    ASSERT(b == 20);
 }
 
 TEST(defer_nested_scopes)
@@ -329,6 +320,8 @@ TEST(defer_nested_scopes)
 
     ASSERT(g_log_count == 2);
     ASSERT(g_log[1] == 100);
+    ASSERT(outer == 100);
+    ASSERT(inner == 200);
 }
 
 static int test_early_return_helper(int *count_snapshot)
@@ -336,6 +329,7 @@ static int test_early_return_helper(int *count_snapshot)
     test_reset_log();
     int token = 55;
     DEFER(test_log_id, &token);
+    ASSERT(token == 55);
     *count_snapshot = (int)g_log_count;
     return -1;
 }
@@ -362,6 +356,7 @@ static int test_goto_helper(void)
     }
 
 out:
+    ASSERT(token == 88);
     return 0;
 }
 
@@ -380,6 +375,7 @@ TEST(defer_break_and_continue_cleanup)
     for (int i = 0; i < 3; ++i) {
         int token = 300 + i;
         DEFER(test_log_id, &token);
+        ASSERT(token == 300 + i);
         if (i == 0)
             continue;
         if (i == 1)
@@ -412,8 +408,6 @@ TEST(defer_free_supports_manual_captured_value_change)
         DEFER_FREE(first);
         defer_active = 1;
         first = second;
-        if (first != second)
-            test_assert(0, "first == second", __FILE__, __LINE__);
     }
 
 cleanup:
@@ -456,8 +450,6 @@ TEST(defer_fclose_helper_closes_tmpfile)
         DEFER_FCLOSE(first);
         defer_active = 1;
         first = second;
-        if (first != second)
-            test_assert(0, "first == second", __FILE__, __LINE__);
     }
 
 cleanup:

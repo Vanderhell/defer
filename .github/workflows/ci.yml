@@ -164,4 +164,6 @@ jobs:
           $vs = & $vswhere -latest -property installationPath
           if (-not $vs) { throw "Visual Studio not found" }
           cmd /c "call `"$vs\Common7\Tools\VsDevCmd.bat`" -arch=x64 && cl /nologo /TC /c /W4 /WX /I. tests\compile_fail\msvc_requires_explicit_fallback.c"
-          if ($LASTEXITCODE -eq 0) { throw "Expected the unsupported-contract test to fail" }
+          $compileExitCode = $LASTEXITCODE
+          if ($compileExitCode -eq 0) { throw "Expected the unsupported-contract test to fail" }
+          exit 0
