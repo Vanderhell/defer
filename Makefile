@@ -2,41 +2,43 @@ BUILD_DIR ?= build
 GCC ?= gcc
 CLANG ?= clang
 
-CFLAGS_STRICT = -I. -std=c11 -Wall -Wextra -Wpedantic -Werror \
-	-Wconversion -Wshadow -Wstrict-prototypes -Wmissing-prototypes \
-	-Wcast-function-type -Wstrict-aliasing=2
+WARNINGS = -Wall -Wextra -Wpedantic -Werror -Wconversion -Wshadow \
+	-Wstrict-prototypes -Wmissing-prototypes -Wcast-function-type \
+	-Wstrict-aliasing=2
 
-CFLAGS_C99 = -I. -std=c99 -Wall -Wextra -Wpedantic -Werror \
-	-Wconversion -Wshadow -Wstrict-prototypes -Wmissing-prototypes \
-	-Wcast-function-type -Wstrict-aliasing=2
+TEST_FLAGS = -D_POSIX_C_SOURCE=200809L -I. $(WARNINGS)
+EXAMPLE_FLAGS = -I. $(WARNINGS)
 
-SAN_FLAGS = -fsanitize=address,undefined -fno-omit-frame-pointer
+.PHONY: all test examples clean
 
-.PHONY: test-gcc test-clang asan ubsan examples clean
+all: test
 
 $(BUILD_DIR):
 	mkdir -p $(BUILD_DIR)
 
-test-gcc: $(BUILD_DIR)
-	$(GCC) $(CFLAGS_C99) -pthread -O0 -o $(BUILD_DIR)/test-gcc tests/test_defer.c
-	./$(BUILD_DIR)/test-gcc
-
-test-clang: $(BUILD_DIR)
-	$(CLANG) $(CFLAGS_C99) -pthread -O0 -o $(BUILD_DIR)/test-clang tests/test_defer.c
-	./$(BUILD_DIR)/test-clang
-
-asan: $(BUILD_DIR)
-	$(CLANG) $(CFLAGS_C99) $(SAN_FLAGS) -pthread -O0 -o $(BUILD_DIR)/asan tests/test_defer.c
-	./$(BUILD_DIR)/asan
-
-ubsan: $(BUILD_DIR)
-	$(CLANG) $(CFLAGS_C99) -fsanitize=undefined -pthread -O0 -o $(BUILD_DIR)/ubsan tests/test_defer.c
-	./$(BUILD_DIR)/ubsan
+test: $(BUILD_DIR)
+	$(GCC) -std=c99 -O0 $(TEST_FLAGS) -pthread tests/test_defer.c -o $(BUILD_DIR)/test-gcc-c99
+	$(GCC) -std=c11 -O0 $(TEST_FLAGS) -pthread tests/test_defer.c -o $(BUILD_DIR)/test-gcc-c11
+	$(CLANG) -std=c99 -O0 $(TEST_FLAGS) -pthread tests/test_defer.c -o $(BUILD_DIR)/test-clang-c99
+	$(CLANG) -std=c11 -O0 $(TEST_FLAGS) -pthread tests/test_defer.c -o $(BUILD_DIR)/test-clang-c11
+	$(GCC) -std=c99 -O0 $(TEST_FLAGS) -pthread tests/multi_tu_main.c tests/multi_tu_a.c tests/multi_tu_b.c -o $(BUILD_DIR)/multi-tu-gcc
+	$(CLANG) -std=c99 -O0 $(TEST_FLAGS) -pthread tests/multi_tu_main.c tests/multi_tu_a.c tests/multi_tu_b.c -o $(BUILD_DIR)/multi-tu-clang
+	$(GCC) -std=c11 -O0 $(TEST_FLAGS) -pthread tests/threaded.c -o $(BUILD_DIR)/threaded-gcc
+	./$(BUILD_DIR)/test-gcc-c99
+	./$(BUILD_DIR)/test-gcc-c11
+	./$(BUILD_DIR)/test-clang-c99
+	./$(BUILD_DIR)/test-clang-c11
+	./$(BUILD_DIR)/multi-tu-gcc
+	./$(BUILD_DIR)/multi-tu-clang
+	./$(BUILD_DIR)/threaded-gcc
+	! $(GCC) -std=c11 -O0 $(TEST_FLAGS) -fsyntax-only tests/compile_fail/incompatible_callback.c
+	! $(GCC) -std=c11 -O0 $(TEST_FLAGS) -fsyntax-only tests/compile_fail/jump_into_guarded_scope.c
+	! $(GCC) -std=c11 -O0 $(TEST_FLAGS) -fsyntax-only tests/compile_fail/dismiss_non_guard.c
 
 examples: $(BUILD_DIR)
-	$(CLANG) $(CFLAGS_STRICT) -O0 -o $(BUILD_DIR)/example-memory examples/memory.c
-	$(CLANG) $(CFLAGS_STRICT) -O0 -o $(BUILD_DIR)/example-files examples/files.c
-	$(CLANG) $(CFLAGS_STRICT) -pthread -O0 -o $(BUILD_DIR)/example-mutex examples/mutex.c
+	$(GCC) -std=c11 -O0 $(EXAMPLE_FLAGS) examples/memory.c -o $(BUILD_DIR)/memory
+	$(GCC) -std=c11 -O0 $(EXAMPLE_FLAGS) examples/files.c -o $(BUILD_DIR)/files
+	$(GCC) -std=c11 -O0 $(EXAMPLE_FLAGS) -pthread examples/mutex.c -o $(BUILD_DIR)/mutex
 
 clean:
-	$(RM) -r $(BUILD_DIR)
+	rm -rf $(BUILD_DIR)

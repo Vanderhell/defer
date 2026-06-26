@@ -1,4 +1,5 @@
 #include "../defer.h"
+#include "multi_tu.h"
 
 static int g_multi_b_hits;
 

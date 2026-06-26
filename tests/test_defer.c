@@ -2,10 +2,18 @@
 #  define _CRT_SECURE_NO_WARNINGS 1
 #endif
 
+#if defined(__unix__) || defined(__APPLE__)
+#  if !defined(_POSIX_C_SOURCE)
+#    define _POSIX_C_SOURCE 200809L
+#  endif
+#endif
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
+#define DEFER_ENABLE_FREE_HELPER
+#define DEFER_ENABLE_STDIO_HELPER
 #if defined(__has_include)
 #  if __has_include(<unistd.h>)
 #    define DEFER_ENABLE_UNISTD_HELPER
@@ -16,9 +24,6 @@
 #    define DEFER_TEST_HAVE_PTHREAD 1
 #  endif
 #endif
-
-#define DEFER_ENABLE_FREE_HELPER
-#define DEFER_ENABLE_STDIO_HELPER
 
 #if defined(DEFER_TEST_HAVE_UNISTD)
 #  include <fcntl.h>

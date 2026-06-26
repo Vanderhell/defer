@@ -45,16 +45,38 @@ int main(void)
     pthread_t right;
     int rc = pthread_create(&left, 0, thread_entry, &g_thread_hits);
     if (rc != 0)
+    {
+        fprintf(stderr, "FAIL: pthread_create(left) rc=%d\n", rc);
         return 1;
+    }
     rc = pthread_create(&right, 0, thread_entry, &g_thread_hits);
     if (rc != 0)
+    {
+        fprintf(stderr, "FAIL: pthread_create(right) rc=%d\n", rc);
         return 1;
+    }
 
-    pthread_join(left, 0);
-    pthread_join(right, 0);
+    rc = pthread_join(left, 0);
+    if (rc != 0)
+    {
+        fprintf(stderr, "FAIL: pthread_join(left) rc=%d\n", rc);
+        return 1;
+    }
+    rc = pthread_join(right, 0);
+    if (rc != 0)
+    {
+        fprintf(stderr, "FAIL: pthread_join(right) rc=%d\n", rc);
+        return 1;
+    }
 
-    printf("%d\n", g_thread_hits);
-    return g_thread_hits == 2 ? 0 : 1;
+    if (g_thread_hits != 2)
+    {
+        fprintf(stderr, "FAIL: expected 2 thread cleanups, got %d\n", g_thread_hits);
+        return 1;
+    }
+
+    printf("PASS: thread cleanups = %d\n", g_thread_hits);
+    return 0;
 }
 
 #else

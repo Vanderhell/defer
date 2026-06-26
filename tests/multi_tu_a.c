@@ -3,6 +3,7 @@
 #include <stdlib.h>
 
 #include "../defer.h"
+#include "multi_tu.h"
 
 static int g_multi_a_hits;
 

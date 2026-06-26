@@ -44,12 +44,6 @@
 #  define DEFER_SUPPORTED 0
 #endif
 
-#if defined(__clang__)
-/* Clang treats __COUNTER__ as a C2y extension; this header uses it
- * intentionally for unique guard names on supported compilers. */
-#  pragma clang diagnostic ignored "-Wc2y-extensions"
-#endif
-
 #if defined(__COUNTER__)
 #  define DEFER_DETAIL_UNIQUE_ID __COUNTER__
 #else
@@ -58,6 +52,22 @@
 
 #define DEFER_DETAIL_CONCAT_IMPL(a, b) a##b
 #define DEFER_DETAIL_CONCAT(a, b) DEFER_DETAIL_CONCAT_IMPL(a, b)
+
+#if defined(__clang__) && defined(__has_warning)
+#  if __has_warning("-Wc2y-extensions")
+#    define DEFER_DETAIL_CLANG_COUNTER_DIAGNOSTIC_PUSH \
+         _Pragma("clang diagnostic push") \
+         _Pragma("clang diagnostic ignored \"-Wc2y-extensions\"")
+#    define DEFER_DETAIL_CLANG_COUNTER_DIAGNOSTIC_POP \
+         _Pragma("clang diagnostic pop")
+#  else
+#    define DEFER_DETAIL_CLANG_COUNTER_DIAGNOSTIC_PUSH
+#    define DEFER_DETAIL_CLANG_COUNTER_DIAGNOSTIC_POP
+#  endif
+#else
+#  define DEFER_DETAIL_CLANG_COUNTER_DIAGNOSTIC_PUSH
+#  define DEFER_DETAIL_CLANG_COUNTER_DIAGNOSTIC_POP
+#endif
 
 #if DEFER_SUPPORTED
 
@@ -84,10 +94,12 @@ static inline void defer_detail_guard_cleanup(defer_detail_guard_t *guard)
         }
 
 #define DEFER(fn, ctx)                                                         \
+    DEFER_DETAIL_CLANG_COUNTER_DIAGNOSTIC_PUSH                                 \
     DEFER_DETAIL_DECLARE_GUARD(                                                \
         DEFER_DETAIL_CONCAT(defer_detail_guard_, DEFER_DETAIL_UNIQUE_ID),      \
         (fn),                                                                  \
-        (ctx))
+        (ctx))                                                                 \
+    DEFER_DETAIL_CLANG_COUNTER_DIAGNOSTIC_POP
 
 #define DEFER_NAMED(name, fn, ctx)                                             \
     DEFER_DETAIL_DECLARE_GUARD(name, (fn), (ctx))
@@ -117,7 +129,10 @@ static inline void defer_detail_free_cleanup(void *ctx)
         defer_detail_free_cleanup,                                             \
         &DEFER_DETAIL_CONCAT(defer_detail_free_state_, id))
 
-#  define DEFER_FREE(ptr_expr) DEFER_DETAIL_DECLARE_FREE((ptr_expr), DEFER_DETAIL_UNIQUE_ID)
+#  define DEFER_FREE(ptr_expr)                                                 \
+     DEFER_DETAIL_CLANG_COUNTER_DIAGNOSTIC_PUSH                                \
+     DEFER_DETAIL_DECLARE_FREE((ptr_expr), DEFER_DETAIL_UNIQUE_ID)             \
+     DEFER_DETAIL_CLANG_COUNTER_DIAGNOSTIC_POP
 #endif
 
 #if defined(DEFER_ENABLE_STDIO_HELPER)
@@ -143,7 +158,10 @@ static inline void defer_detail_fclose_cleanup(void *ctx)
         defer_detail_fclose_cleanup,                                           \
         &DEFER_DETAIL_CONCAT(defer_detail_fclose_state_, id))
 
-#  define DEFER_FCLOSE(fp_expr) DEFER_DETAIL_DECLARE_FCLOSE((fp_expr), DEFER_DETAIL_UNIQUE_ID)
+#  define DEFER_FCLOSE(fp_expr)                                                \
+     DEFER_DETAIL_CLANG_COUNTER_DIAGNOSTIC_PUSH                                \
+     DEFER_DETAIL_DECLARE_FCLOSE((fp_expr), DEFER_DETAIL_UNIQUE_ID)           \
+     DEFER_DETAIL_CLANG_COUNTER_DIAGNOSTIC_POP
 #endif
 
 #if defined(DEFER_ENABLE_UNISTD_HELPER)
@@ -169,7 +187,10 @@ static inline void defer_detail_close_cleanup(void *ctx)
         defer_detail_close_cleanup,                                            \
         &DEFER_DETAIL_CONCAT(defer_detail_close_state_, id))
 
-#  define DEFER_CLOSE(fd_expr) DEFER_DETAIL_DECLARE_CLOSE((fd_expr), DEFER_DETAIL_UNIQUE_ID)
+#  define DEFER_CLOSE(fd_expr)                                                 \
+     DEFER_DETAIL_CLANG_COUNTER_DIAGNOSTIC_PUSH                                \
+     DEFER_DETAIL_DECLARE_CLOSE((fd_expr), DEFER_DETAIL_UNIQUE_ID)            \
+     DEFER_DETAIL_CLANG_COUNTER_DIAGNOSTIC_POP
 #endif
 
 #if defined(DEFER_WITH_PTHREAD)
@@ -195,7 +216,10 @@ static inline void defer_detail_unlock_cleanup(void *ctx)
         defer_detail_unlock_cleanup,                                           \
         &DEFER_DETAIL_CONCAT(defer_detail_unlock_state_, id))
 
-#  define DEFER_UNLOCK(mutex_expr) DEFER_DETAIL_DECLARE_UNLOCK((mutex_expr), DEFER_DETAIL_UNIQUE_ID)
+#  define DEFER_UNLOCK(mutex_expr)                                             \
+     DEFER_DETAIL_CLANG_COUNTER_DIAGNOSTIC_PUSH                                \
+     DEFER_DETAIL_DECLARE_UNLOCK((mutex_expr), DEFER_DETAIL_UNIQUE_ID)        \
+     DEFER_DETAIL_CLANG_COUNTER_DIAGNOSTIC_POP
 #endif
 
 #else /* !DEFER_SUPPORTED */

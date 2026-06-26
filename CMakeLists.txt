@@ -9,6 +9,7 @@ find_package(Threads)
 
 option(DEFER_BUILD_TESTS "Build tests" ON)
 option(DEFER_BUILD_EXAMPLES "Build examples" ON)
+option(DEFER_STRICT_WARNINGS "Enable strict warning flags for tests and examples" ON)
 
 add_library(defer INTERFACE)
 add_library(defer::defer ALIAS defer)
@@ -45,14 +46,22 @@ install(FILES
     DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/defer)
 
 function(defer_apply_warnings target)
-    if (MSVC)
-        target_compile_options(${target} PRIVATE /W4 /WX)
-    else()
-        target_compile_options(${target} PRIVATE
-            -Wall
-            -Wextra
-            -Wpedantic
-            -Werror)
+    if (DEFER_STRICT_WARNINGS)
+        if (MSVC)
+            target_compile_options(${target} PRIVATE /W4 /WX)
+        else()
+            target_compile_options(${target} PRIVATE
+                -Wall
+                -Wextra
+                -Wpedantic
+                -Werror
+                -Wconversion
+                -Wshadow
+                -Wstrict-prototypes
+                -Wmissing-prototypes
+                -Wcast-function-type
+                -Wstrict-aliasing=2)
+        endif()
     endif()
 endfunction()
 

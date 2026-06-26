@@ -1,7 +1,6 @@
 #include <stdio.h>
 
-int defer_multi_tu_a(void);
-int defer_multi_tu_b(void);
+#include "multi_tu.h"
 
 int main(void)
 {
