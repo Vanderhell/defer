@@ -63,38 +63,51 @@ static int copy_stream(FILE *src, FILE *dst)
 
 static int copy_and_verify(void)
 {
+    int rc = -1;
+    file_state_t src_state = { NULL };
+    file_state_t dst_state = { NULL };
+
+    DEFER_NAMED(src_guard, file_close_cleanup, &src_state);
+    DEFER_NAMED(dst_guard, file_close_cleanup, &dst_state);
+
     FILE *src = tmpfile();
     if (src == NULL)
-        return -1;
-
-    DEFER_FCLOSE(src);
+        goto cleanup;
+    src_state.fp = src;
 
     FILE *dst = tmpfile();
     if (dst == NULL)
-        return -1;
-
-    file_state_t dst_state = { dst };
-    DEFER_NAMED(dst_guard, file_close_cleanup, &dst_state);
+        goto cleanup;
+    dst_state.fp = dst;
 
     if (fputs("line one\nline two\nline three\n", src) == EOF)
-        return -1;
+        goto cleanup;
 
     if (copy_stream(src, dst) != 0)
-        return -1;
+        goto cleanup;
 
     rewind(dst);
     if (count_lines(dst) != 3)
-        return -1;
+        goto cleanup;
 
-    {
-        int close_rc = fclose(dst);
+    rc = count_lines(src);
+
+cleanup:
+    if (dst_state.fp != NULL) {
+        int close_rc = fclose(dst_state.fp);
         dst_state.fp = NULL;
-        DEFER_DISMISS(dst_guard);
         if (close_rc != 0)
-            return -1;
+            rc = -1;
     }
 
-    return count_lines(src);
+    if (src_state.fp != NULL) {
+        int close_rc = fclose(src_state.fp);
+        src_state.fp = NULL;
+        if (close_rc != 0)
+            rc = -1;
+    }
+
+    return rc;
 }
 
 int main(void)

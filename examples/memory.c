@@ -9,45 +9,75 @@
 
 #define BUF_SIZE 256
 
-static size_t bounded_length(const char *text, size_t limit)
-{
-    size_t len = 0;
-    while (len < limit && text[len] != '\0')
-        ++len;
-    return len;
-}
-
 static void uppercase_copy(char *dst, size_t dstsz, const char *src)
 {
-    size_t len = bounded_length(src, dstsz - 1);
-    memcpy(dst, src, len);
-    dst[len] = '\0';
+    size_t i = 0;
 
-    for (size_t i = 0; i < len; ++i) {
-        if (dst[i] >= 'a' && dst[i] <= 'z')
-            dst[i] = (char)(dst[i] - ('a' - 'A'));
+    if (dstsz == 0)
+        return;
+
+    while (i + 1u < dstsz && src[i] != '\0') {
+        char ch = src[i];
+        if (ch >= 'a' && ch <= 'z')
+            ch = (char)(ch - ('a' - 'A'));
+        dst[i] = ch;
+        ++i;
+    }
+
+    dst[i] = '\0';
+}
+
+typedef struct buffer_state_s {
+    char *ptr;
+} buffer_state_t;
+
+static void buffer_cleanup(void *ctx)
+{
+    buffer_state_t *state = (buffer_state_t *)ctx;
+    if (state->ptr != NULL) {
+        free(state->ptr);
+        state->ptr = NULL;
     }
 }
 
 static int process_data(const char *input, char *output, size_t outsz)
 {
+    int rc = -1;
+    buffer_state_t tmp_state = { NULL };
+    buffer_state_t work_state = { NULL };
+
     if (input == NULL || output == NULL || outsz == 0)
         return -1;
 
-    char *tmp = (char *)malloc(BUF_SIZE);
-    if (tmp == NULL)
-        return -1;
-    DEFER_FREE(tmp);
+    DEFER_NAMED(tmp_guard, buffer_cleanup, &tmp_state);
+    DEFER_NAMED(work_guard, buffer_cleanup, &work_state);
 
-    char *work = (char *)malloc(BUF_SIZE);
-    if (work == NULL)
-        return -1;
-    DEFER_FREE(work);
+    tmp_state.ptr = (char *)malloc(BUF_SIZE);
+    if (tmp_state.ptr == NULL)
+        goto cleanup;
 
-    uppercase_copy(tmp, BUF_SIZE, input);
-    uppercase_copy(work, BUF_SIZE, tmp);
-    uppercase_copy(output, outsz, work);
-    return 0;
+    work_state.ptr = (char *)malloc(BUF_SIZE);
+    if (work_state.ptr == NULL)
+        goto cleanup;
+
+    uppercase_copy(tmp_state.ptr, BUF_SIZE, input);
+    uppercase_copy(work_state.ptr, BUF_SIZE, tmp_state.ptr);
+    uppercase_copy(output, outsz, work_state.ptr);
+
+    rc = 0;
+
+cleanup:
+    if (work_state.ptr != NULL) {
+        free(work_state.ptr);
+        work_state.ptr = NULL;
+    }
+
+    if (tmp_state.ptr != NULL) {
+        free(tmp_state.ptr);
+        tmp_state.ptr = NULL;
+    }
+
+    return rc;
 }
 
 int main(void)
