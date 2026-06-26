@@ -138,6 +138,7 @@ TEST(defer_generic_side_effects_are_evaluated_once)
     ASSERT(g_selector_hits == 2);
     ASSERT(g_log_count == 1);
     ASSERT(g_log[0] == 7);
+    // cppcheck-suppress knownConditionTrueFalse
     ASSERT(token == 7);
 }
 
@@ -150,6 +151,7 @@ TEST(defer_named_dismiss_is_idempotent)
         DEFER_DISMISS(guard);
     }
 
+    // cppcheck-suppress knownConditionTrueFalse
     ASSERT(cleanup_hits == 0);
 }
 
@@ -247,6 +249,7 @@ TEST(defer_free_supports_struct_and_const_pointers)
     {
         const unsigned char *const_raw = raw;
         DEFER_FREE(const_raw);
+        (void)const_raw;
     }
 
 cleanup:
@@ -285,8 +288,11 @@ TEST(defer_lifo_order)
     ASSERT(g_log[0] == 3);
     ASSERT(g_log[1] == 2);
     ASSERT(g_log[2] == 1);
+    // cppcheck-suppress knownConditionTrueFalse
     ASSERT(a == 1);
+    // cppcheck-suppress knownConditionTrueFalse
     ASSERT(b == 2);
+    // cppcheck-suppress knownConditionTrueFalse
     ASSERT(c == 3);
 }
 
@@ -299,7 +305,9 @@ TEST(defer_multiple_on_one_line)
     ASSERT(g_log_count == 2);
     ASSERT(g_log[0] == 20);
     ASSERT(g_log[1] == 10);
+    // cppcheck-suppress knownConditionTrueFalse
     ASSERT(a == 10);
+    // cppcheck-suppress knownConditionTrueFalse
     ASSERT(b == 20);
 }
 
@@ -320,7 +328,9 @@ TEST(defer_nested_scopes)
 
     ASSERT(g_log_count == 2);
     ASSERT(g_log[1] == 100);
+    // cppcheck-suppress knownConditionTrueFalse
     ASSERT(outer == 100);
+    // cppcheck-suppress knownConditionTrueFalse
     ASSERT(inner == 200);
 }
 
@@ -329,6 +339,7 @@ static int test_early_return_helper(int *count_snapshot)
     test_reset_log();
     int token = 55;
     DEFER(test_log_id, &token);
+    // cppcheck-suppress knownConditionTrueFalse
     if (token != 55)
         test_assert(0, "token == 55", __FILE__, __LINE__);
     *count_snapshot = (int)g_log_count;
@@ -357,6 +368,7 @@ static int test_goto_helper(void)
     }
 
 out:
+    // cppcheck-suppress knownConditionTrueFalse
     if (token != 88)
         test_assert(0, "token == 88", __FILE__, __LINE__);
     return 0;
@@ -377,6 +389,7 @@ TEST(defer_break_and_continue_cleanup)
     for (int i = 0; i < 3; ++i) {
         int token = 300 + i;
         DEFER(test_log_id, &token);
+        // cppcheck-suppress knownConditionTrueFalse
         ASSERT(token == 300 + i);
         if (i == 0)
             continue;
@@ -484,6 +497,7 @@ TEST(defer_close_helper_captures_fd_value)
         DEFER_CLOSE(fd1);
         defer_active = 1;
         fd1 = fd2;
+        // cppcheck-suppress knownConditionTrueFalse
         if (fd1 != fd2)
             test_assert(0, "fd1 == fd2", __FILE__, __LINE__);
     }

@@ -127,7 +127,7 @@ jobs:
         run: clang-tidy tests/test_defer.c -- -std=c11 -I.
 
       - name: cppcheck
-        run: cppcheck --enable=warning,style,performance,portability --error-exitcode=1 -I . tests/test_defer.c examples/memory.c examples/files.c examples/mutex.c
+        run: cppcheck --inline-suppr --enable=warning,style,performance,portability --error-exitcode=1 -I . tests/test_defer.c examples/memory.c examples/files.c examples/mutex.c
 
   arm-cross:
     name: ARM freestanding compile-only
